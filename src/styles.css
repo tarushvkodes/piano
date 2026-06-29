@@ -185,8 +185,7 @@ label {
   padding: 0;
 }
 
-.presetSongs,
-.toneGrid {
+.presetSongs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
@@ -206,27 +205,6 @@ label {
   font-size: 0.86rem;
   font-weight: 800;
   text-decoration: none;
-}
-
-.toneGrid {
-  grid-template-columns: 1fr;
-}
-
-.toneButton {
-  min-height: 34px;
-  padding: 0 10px;
-  color: #40504d;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(24, 32, 31, 0.12);
-  border-radius: 6px;
-  font-size: 0.88rem;
-  font-weight: 800;
-  text-align: left;
-}
-
-.toneButton.active {
-  color: #f9f4ea;
-  background: #173f43;
 }
 
 .segmented {

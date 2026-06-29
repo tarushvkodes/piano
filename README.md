@@ -51,17 +51,11 @@ The Song panel has buttons for:
 
 Put those MIDI files in `public/midi/` and the buttons will load them. If a source blocks browser fetches, download the MIDI and use **Load MIDI**.
 
-## FP-10 tone presets
+If those files are missing or a URL returns HTML instead of MIDI, the app shows a clear missing-file message instead of trying to parse the page as MIDI.
 
-After clicking **Connect MIDI**, choose the FP-10 MIDI output in the **FP-10 Tone** panel. Tone buttons send standard General MIDI bank/program messages:
+## FP-10 instrument
 
-- Concert Piano
-- Bright Piano
-- E. Piano
-- Warm Strings
-- Soft Pad
-
-The preset song buttons also send a suggested tone before loading the song.
+Leave the FP-10 on Concert Piano. The app only listens to incoming MIDI notes and does not send tone/program changes to the keyboard.
 
 ## Extract video frames for sheet music
 

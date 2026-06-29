@@ -7,7 +7,6 @@ import {
   CircleStop,
   ExternalLink,
   FileMusic,
-  Music2,
   KeyboardMusic,
   Pause,
   Play,
@@ -25,13 +24,6 @@ const MAGIC_STRINGS_LOCAL_PATH = '/midi/mrs-magic-strings-version.mid';
 const STRESS_RELIEF_LOCAL_PATH = '/midi/stress-relief-late-night-drive-home.mid';
 const MAGIC_STRINGS_SOURCE_URL = 'https://www.hamienet.com/midi95020_Mrs-Magic-Strings-Version.html';
 const STRESS_RELIEF_SEARCH_URL = 'https://www.google.com/search?q=Stress+Relief+Late+Night+Drive+Home+MIDI';
-const TONE_PRESETS = [
-  { id: 'piano', label: 'Concert Piano', program: 0, bankMsb: 0, bankLsb: 0 },
-  { id: 'bright', label: 'Bright Piano', program: 1, bankMsb: 0, bankLsb: 0 },
-  { id: 'epiano', label: 'E. Piano', program: 4, bankMsb: 0, bankLsb: 0 },
-  { id: 'strings', label: 'Warm Strings', program: 48, bankMsb: 0, bankLsb: 0 },
-  { id: 'pad', label: 'Soft Pad', program: 88, bankMsb: 0, bankLsb: 0 },
-];
 const SONG_PRESETS = [
   {
     id: 'mrs-magic',
@@ -39,7 +31,6 @@ const SONG_PRESETS = [
     fileName: 'Mrs Magic (Strings Version).mid',
     localPath: MAGIC_STRINGS_LOCAL_PATH,
     sourceUrl: MAGIC_STRINGS_SOURCE_URL,
-    toneId: 'strings',
   },
   {
     id: 'stress-relief',
@@ -47,7 +38,6 @@ const SONG_PRESETS = [
     fileName: 'Stress Relief - Late Night Drive Home.mid',
     localPath: STRESS_RELIEF_LOCAL_PATH,
     sourceUrl: STRESS_RELIEF_SEARCH_URL,
-    toneId: 'epiano',
   },
 ];
 const WHITE_PITCHES = new Set([0, 2, 4, 5, 7, 9, 11]);
@@ -76,6 +66,12 @@ function midiToVexKey(midi) {
 
 function formatNotes(midis) {
   return [...midis].sort((a, b) => a - b).map(noteName).join(' ');
+}
+
+function isMidiBuffer(buffer) {
+  if (!buffer || buffer.byteLength < 14) return false;
+  const header = new TextDecoder('ascii').decode(new Uint8Array(buffer, 0, 4));
+  return header === 'MThd';
 }
 
 function normalizeMidi(raw) {
@@ -268,13 +264,9 @@ function App() {
   const [midiAccess, setMidiAccess] = useState(null);
   const [midiError, setMidiError] = useState('');
   const [inputs, setInputs] = useState([]);
-  const [outputs, setOutputs] = useState([]);
   const [selectedInputId, setSelectedInputId] = useState('');
-  const [selectedOutputId, setSelectedOutputId] = useState('');
   const [song, setSong] = useState(null);
   const [fileError, setFileError] = useState('');
-  const [toneMessage, setToneMessage] = useState('');
-  const [selectedToneId, setSelectedToneId] = useState('piano');
   const [songUrl, setSongUrl] = useState('');
   const [pressed, setPressed] = useState(() => new Map());
   const [hitNotes, setHitNotes] = useState(() => new Set());
@@ -342,24 +334,11 @@ function App() {
       state: input.state,
       connection: input.connection,
     }));
-    const nextOutputs = Array.from(access.outputs.values()).map((output) => ({
-      id: output.id,
-      name: output.name || 'Unnamed MIDI Output',
-      manufacturer: output.manufacturer || '',
-      state: output.state,
-      connection: output.connection,
-    }));
     setInputs(nextInputs);
-    setOutputs(nextOutputs);
     setSelectedInputId((existing) => {
       if (existing && nextInputs.some((input) => input.id === existing)) return existing;
       const roland = nextInputs.find((input) => /roland|fp-?10|digital piano/i.test(`${input.name} ${input.manufacturer}`));
       return roland?.id || nextInputs[0]?.id || '';
-    });
-    setSelectedOutputId((existing) => {
-      if (existing && nextOutputs.some((output) => output.id === existing)) return existing;
-      const roland = nextOutputs.find((output) => /roland|fp-?10|digital piano/i.test(`${output.name} ${output.manufacturer}`));
-      return roland?.id || nextOutputs[0]?.id || '';
     });
   }, [midiAccess]);
 
@@ -390,6 +369,10 @@ function App() {
 
   const loadMidiBuffer = async (buffer, fileName) => {
     setFileError('');
+    if (!isMidiBuffer(buffer)) {
+      setFileError(`${fileName} is missing or is not a MIDI file. Put the real .mid file in public/midi/ or use Load MIDI.`);
+      return;
+    }
     try {
       const parsed = normalizeMidi(new Midi(buffer));
       if (!parsed.notes.length) {
@@ -419,6 +402,7 @@ function App() {
     setFileError('');
     try {
       const response = await fetch(url);
+      if (response.status === 404) throw new Error(`${label} is not in public/midi yet.`);
       if (!response.ok) throw new Error(`Could not fetch MIDI (${response.status}).`);
       await loadMidiBuffer(await response.arrayBuffer(), label);
     } catch (error) {
@@ -427,23 +411,7 @@ function App() {
   };
 
   const loadPresetSong = async (preset) => {
-    const tone = TONE_PRESETS.find((item) => item.id === preset.toneId);
-    if (tone) sendTone(tone);
     await loadMidiUrl(preset.localPath, preset.fileName);
-  };
-
-  const sendTone = (tone) => {
-    setSelectedToneId(tone.id);
-    const output = midiAccess?.outputs.get(selectedOutputId);
-    if (!output) {
-      setToneMessage('Select a MIDI output after connecting MIDI, then send the tone again.');
-      return;
-    }
-
-    output.send([0xb0, 0x00, tone.bankMsb]);
-    output.send([0xb0, 0x20, tone.bankLsb]);
-    output.send([0xc0, tone.program]);
-    setToneMessage(`Sent ${tone.label} to ${output.name || 'MIDI output'}.`);
   };
 
   const togglePlayback = () => {
@@ -700,33 +668,7 @@ function App() {
                 <span>{song.bpm ? `${song.bpm} BPM` : 'Tempo from file'}</span>
               </div>
             )}
-          </div>
-
-          <div className="controlGroup">
-            <div className="sectionTitle">
-              <Music2 size={18} />
-              FP-10 Tone
-            </div>
-            <select value={selectedOutputId} onChange={(event) => setSelectedOutputId(event.target.value)}>
-              <option value="">No MIDI output selected</option>
-              {outputs.map((output) => (
-                <option key={output.id} value={output.id}>
-                  {output.name} {output.manufacturer ? `(${output.manufacturer})` : ''}
-                </option>
-              ))}
-            </select>
-            <div className="toneGrid">
-              {TONE_PRESETS.map((tone) => (
-                <button
-                  key={tone.id}
-                  className={`toneButton ${selectedToneId === tone.id ? 'active' : ''}`}
-                  onClick={() => sendTone(tone)}
-                >
-                  {tone.label}
-                </button>
-              ))}
-            </div>
-            {toneMessage && <p className="hint">{toneMessage}</p>}
+            <p className="hint">Leave the FP-10 on Concert Piano. The app only listens to your notes and never changes the instrument.</p>
           </div>
 
           <div className="controlGroup">
