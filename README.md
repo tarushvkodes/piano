@@ -71,10 +71,10 @@ Then run:
 npm run extract:video -- "https://youtu.be/WvWwMW6bBls" mrs-magic
 ```
 
-This creates a local workspace in `tools/extracted_sheet_music/<slug>/`. When YouTube allows the full MP4 download, the script extracts frame samples, audio, and a ranked `sheet-frame-report.json`. If YouTube blocks the MP4 with a 403, the script falls back to the public storyboard thumbnails, splits them into frames, and generates a draft coach MIDI at:
+The script uses `yt-dlp --cookies-from-browser chrome` so YouTube can serve the actual media streams from your signed-in browser session. It creates a local workspace in `tools/extracted_sheet_music/<slug>/`, extracts frame samples and audio, and regenerates the coach MIDI at:
 
 ```text
 public/midi/mrs-magic-strings-version.mid
 ```
 
-The storyboard-derived MIDI is useful for coach-mode practice, but it is an approximation from low-resolution tutorial frames. A full MP4 download or a source MIDI will be more accurate.
+If YouTube still blocks the full MP4, the script falls back to public storyboard thumbnails and generates a lower-resolution draft MIDI from those frames.
