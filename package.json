@@ -1,0 +1,26 @@
+{
+  "name": "piano",
+  "version": "1.0.0",
+  "description": "Bluetooth MIDI piano learner for Roland FP-10",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "scan:ble-midi": "swift scripts/ble-midi-scan.swift",
+    "extract:video": "bash scripts/video-sheet-extract.sh"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@tonejs/midi": "^2.0.28",
+    "@vitejs/plugin-react": "^6.0.3",
+    "lucide-react": "^1.22.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "vexflow": "^5.0.0",
+    "vite": "^8.1.0"
+  }
+}

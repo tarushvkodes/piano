@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.DS_Store
+tools/video_sources/
+tools/extracted_sheet_music/
