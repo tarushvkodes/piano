@@ -5,6 +5,9 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:lan": "vite --host 0.0.0.0",
+    "quest:serve": "node scripts/ensure-dev-cert.cjs && npm run build && node scripts/quest-server.cjs",
+    "bridge:quest": "node scripts/quest-sync-bridge.cjs",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "scan:ble-midi": "swift scripts/ble-midi-scan.swift",
@@ -21,7 +24,9 @@
     "lucide-react": "^1.22.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "three": "^0.185.0",
     "vexflow": "^5.0.0",
-    "vite": "^8.1.0"
+    "vite": "^8.1.0",
+    "ws": "^8.21.0"
   }
 }

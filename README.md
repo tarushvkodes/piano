@@ -15,6 +15,54 @@ npm run dev
 
 Open the local URL printed by Vite, usually `http://127.0.0.1:5173/`.
 
+## Meta Quest 3 tandem mode
+
+The Mac should be the bridge/control surface because it can reliably connect to the FP-10 through Web MIDI. The Quest browser can subscribe to the Mac's live song, timing, pressed-note, and target-note state, then render the PianoVision-style XR overlay.
+
+Serve the app over HTTPS on your LAN:
+
+```bash
+npm run quest:serve
+```
+
+This builds the app, starts an HTTPS server, and hosts the tandem sync socket on the same secure origin.
+
+For example, if it prints:
+
+```text
+https://192.168.10.79:5173
+```
+
+then the app's bridge URL should be:
+
+```text
+wss://192.168.10.79:5173/sync
+```
+
+For plain desktop development without Quest XR, you can still run the pieces separately:
+
+```bash
+npm run dev:lan
+npm run bridge:quest
+```
+
+Mac flow:
+
+1. Open the HTTPS Vite URL on the Mac.
+2. Click **Connect MIDI** and choose the FP-10.
+3. Load a song.
+4. In **Quest 3**, choose **Mac host**.
+
+Quest flow:
+
+1. Open the same HTTPS Vite URL in Meta Quest Browser.
+2. Accept the local development certificate warning.
+3. In **Quest 3**, choose **Quest client**.
+4. Enable **Show Quest XR practice view**.
+5. Click **Enter Quest XR** from the headset.
+
+If Quest Browser supports Web MIDI for your paired FP-10, it can also run standalone. The intended tandem setup is Mac as MIDI host and Quest as XR display.
+
 ## Scan for the FP-10 Bluetooth MIDI advertisement
 
 Turn on the FP-10, then run:

@@ -8,7 +8,9 @@ import {
   ExternalLink,
   FileMusic,
   Hand,
+  Headset,
   KeyboardMusic,
+  Link,
   Pause,
   Play,
   RefreshCw,
@@ -19,6 +21,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import './styles.css';
+import XrPractice from './XrPractice.jsx';
 
 const FIRST_NOTE = 21;
 const LAST_NOTE = 108;
@@ -58,6 +61,19 @@ const WHITE_PITCHES = new Set([0, 2, 4, 5, 7, 9, 11]);
 const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 const VEX_NOTE_NAMES = ['c', 'db', 'd', 'eb', 'e', 'f', 'gb', 'g', 'ab', 'a', 'bb', 'b'];
 const FLAT_PITCHES = new Set([1, 3, 6, 8, 10]);
+
+function defaultSyncUrl() {
+  if (typeof window === 'undefined') return 'ws://localhost:8787';
+  const host = window.location.hostname && window.location.hostname !== 'localhost'
+    ? window.location.hostname
+    : 'localhost';
+  if (window.location.protocol === 'https:') {
+    const port = window.location.port ? `:${window.location.port}` : '';
+    return `wss://${host}${port}/sync`;
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${protocol}://${host}:8787`;
+}
 
 function noteName(midi) {
   return `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
@@ -314,6 +330,10 @@ function App() {
   const [restartOnMistake, setRestartOnMistake] = useState(true);
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [showKeyLabels, setShowKeyLabels] = useState(true);
+  const [showXrPractice, setShowXrPractice] = useState(false);
+  const [syncRole, setSyncRole] = useState('off');
+  const [syncUrl, setSyncUrl] = useState(defaultSyncUrl);
+  const [syncStatus, setSyncStatus] = useState('Not connected');
   const [coachStepIndex, setCoachStepIndex] = useState(0);
   const [coachPlayed, setCoachPlayed] = useState(() => new Set());
   const [mistakeCount, setMistakeCount] = useState(0);
@@ -323,6 +343,12 @@ function App() {
   const coachTimerRef = useRef(0);
   const audioContextRef = useRef(null);
   const previewNodesRef = useRef([]);
+  const syncSocketRef = useRef(null);
+  const songRef = useRef(null);
+  const pressedRef = useRef(pressed);
+  const currentTimeRef = useRef(currentTime);
+  const playingRef = useRef(playing);
+  const currentTargetsRef = useRef(new Set());
   const fileInputRef = useRef(null);
   const { keys, whiteCount } = useMemo(buildKeyboard, []);
 
@@ -607,6 +633,26 @@ function App() {
     return active;
   }, [currentPracticeStep, currentTime, practiceMode, visibleNotes]);
 
+  useEffect(() => {
+    songRef.current = song;
+  }, [song]);
+
+  useEffect(() => {
+    pressedRef.current = pressed;
+  }, [pressed]);
+
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+  }, [currentTime]);
+
+  useEffect(() => {
+    playingRef.current = playing;
+  }, [playing]);
+
+  useEffect(() => {
+    currentTargetsRef.current = currentTargets;
+  }, [currentTargets]);
+
   const upcomingTargets = useMemo(() => {
     const upcoming = new Set();
     if (practiceMode === 'coach') {
@@ -620,6 +666,76 @@ function App() {
     });
     return upcoming;
   }, [coachStepIndex, currentTime, practiceMode, practiceSteps, visibleNotes]);
+
+  useEffect(() => {
+    if (syncRole === 'off') {
+      syncSocketRef.current?.close();
+      syncSocketRef.current = null;
+      setSyncStatus('Not connected');
+      return undefined;
+    }
+
+    let closed = false;
+    let snapshotTimer = 0;
+    const socket = new WebSocket(syncUrl);
+    syncSocketRef.current = socket;
+    setSyncStatus(`Connecting as ${syncRole}...`);
+
+    socket.onopen = () => {
+      setSyncStatus(syncRole === 'host' ? 'Hosting Quest sync' : 'Listening to Mac host');
+      socket.send(JSON.stringify({
+        type: 'hello',
+        role: syncRole,
+        at: Date.now(),
+      }));
+
+      if (syncRole === 'host') {
+        snapshotTimer = window.setInterval(() => {
+          if (socket.readyState !== WebSocket.OPEN) return;
+          const hostSong = songRef.current;
+          socket.send(JSON.stringify({
+            type: 'state',
+            song: hostSong,
+            currentTime: currentTimeRef.current,
+            playing: playingRef.current,
+            pressed: [...pressedRef.current.entries()],
+            currentTargets: [...currentTargetsRef.current],
+            sentAt: Date.now(),
+          }));
+        }, 120);
+      }
+    };
+
+    socket.onmessage = (event) => {
+      if (syncRole !== 'client') return;
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type !== 'state') return;
+        if (message.song) setSong(message.song);
+        setCurrentTime(Number(message.currentTime || 0));
+        setPlaying(Boolean(message.playing));
+        setPressed(new Map(message.pressed || []));
+        setSyncStatus(`Synced from Mac ${new Date(message.sentAt || Date.now()).toLocaleTimeString()}`);
+      } catch (error) {
+        setSyncStatus(error?.message || 'Could not read sync message');
+      }
+    };
+
+    socket.onerror = () => {
+      if (!closed) setSyncStatus('Sync bridge error');
+    };
+
+    socket.onclose = () => {
+      window.clearInterval(snapshotTimer);
+      if (!closed) setSyncStatus('Sync bridge disconnected');
+    };
+
+    return () => {
+      closed = true;
+      window.clearInterval(snapshotTimer);
+      socket.close();
+    };
+  }, [syncRole, syncUrl]);
 
   useEffect(() => {
     if (!song || practiceMode !== 'timing' || !playing) return;
@@ -878,6 +994,40 @@ function App() {
           </div>
 
           <div className="controlGroup">
+            <div className="sectionTitle">
+              <Headset size={18} />
+              Quest 3
+            </div>
+            <div className="syncRoleGrid">
+              <button className={syncRole === 'off' ? 'active' : ''} onClick={() => setSyncRole('off')}>Off</button>
+              <button className={syncRole === 'host' ? 'active' : ''} onClick={() => setSyncRole('host')}>Mac host</button>
+              <button className={syncRole === 'client' ? 'active' : ''} onClick={() => setSyncRole('client')}>Quest client</button>
+            </div>
+            <label className="fieldLabel">
+              Sync bridge
+              <input
+                type="url"
+                value={syncUrl}
+                onChange={(event) => setSyncUrl(event.target.value)}
+                placeholder="ws://mac-ip:8787"
+              />
+            </label>
+            <p className="syncStatus">
+              <Link size={14} />
+              {syncStatus}
+            </p>
+            <label className="toggleRow">
+              <input
+                type="checkbox"
+                checked={showXrPractice}
+                onChange={(event) => setShowXrPractice(event.target.checked)}
+              />
+              <span>Show Quest XR practice view</span>
+            </label>
+            <p className="hint">Use this from Meta Quest Browser for a PianoVision-style floating note highway over a 3D keyboard.</p>
+          </div>
+
+          <div className="controlGroup">
             <div className="sectionTitle">Practice</div>
             <div className="segmented">
               <button className={practiceMode === 'coach' ? 'active' : ''} onClick={() => setPracticeMode('coach')}>Coach</button>
@@ -1062,6 +1212,19 @@ function App() {
 
           {correctPressed > 0 && <div className="matchPulse">Nice: {correctPressed} target note{correctPressed === 1 ? '' : 's'}</div>}
         </section>
+
+        {showXrPractice && (
+          <XrPractice
+            song={song}
+            currentTime={currentTime}
+            playing={playing}
+            currentTargets={currentTargets}
+            pressedSet={pressedSet}
+            hitNotes={hitNotes}
+            noteName={noteName}
+            onRewind={rewind}
+          />
+        )}
       </section>
     </main>
   );
