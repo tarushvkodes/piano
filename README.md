@@ -44,12 +44,17 @@ Coach mode is active learning, not a passive video-style playback:
 
 **Follow** mode keeps the scrolling piano-roll behavior for looser practice.
 
+**Timing** mode keeps the falling-note clock running and checks whether you play each note close to when it reaches the yellow line. Use it after Coach mode so you learn the rhythm and harmony instead of brute-forcing a chord one note at a time.
+
+Use **Target** to hear the current note or chord, and **Next 8s** to hear a short preview with the original MIDI timing.
+
 ## Built-in song slots
 
 The Song panel has buttons for:
 
 - `Mrs Magic` -> `public/midi/mrs-magic-strings-version.mid`
 - `Stress Relief` -> `public/midi/stress-relief-late-night-drive-home.mid`
+- `La La Land` -> `public/midi/mia-sebastians-theme-la-la-land.mid`
 
 Those files live in `public/midi/` so the buttons load immediately. If a source blocks browser fetches for a different song, download the MIDI and use **Load MIDI**.
 

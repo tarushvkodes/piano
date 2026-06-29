@@ -16,6 +16,7 @@ import {
   StepBack,
   StepForward,
   Upload,
+  Volume2,
 } from 'lucide-react';
 import './styles.css';
 
@@ -23,8 +24,11 @@ const FIRST_NOTE = 21;
 const LAST_NOTE = 108;
 const LOOKAHEAD_SECONDS = 4;
 const CHORD_WINDOW_SECONDS = 0.08;
+const TIMING_EARLY_SECONDS = 0.32;
+const TIMING_LATE_SECONDS = 0.48;
 const MAGIC_STRINGS_LOCAL_PATH = '/midi/mrs-magic-strings-version.mid';
 const STRESS_RELIEF_LOCAL_PATH = '/midi/stress-relief-late-night-drive-home.mid';
+const LA_LA_LAND_LOCAL_PATH = '/midi/mia-sebastians-theme-la-la-land.mid';
 const MAGIC_STRINGS_SOURCE_URL = 'https://www.hamienet.com/midi95020_Mrs-Magic-Strings-Version.html';
 const STRESS_RELIEF_SOURCE_URL = 'https://www.youtube.com/watch?v=mcsndWw-Tzs';
 const SONG_PRESETS = [
@@ -41,6 +45,13 @@ const SONG_PRESETS = [
     fileName: 'Stress Relief - Late Night Drive Home.mid',
     localPath: STRESS_RELIEF_LOCAL_PATH,
     sourceUrl: STRESS_RELIEF_SOURCE_URL,
+  },
+  {
+    id: 'la-la-land',
+    label: 'La La Land',
+    fileName: "Mia & Sebastian's Theme (La La Land Soundtrack).mid",
+    localPath: LA_LA_LAND_LOCAL_PATH,
+    sourceUrl: null,
   },
 ];
 const WHITE_PITCHES = new Set([0, 2, 4, 5, 7, 9, 11]);
@@ -59,6 +70,10 @@ function clamp(value, min, max) {
 function noteColor(midi) {
   const hue = ((midi - FIRST_NOTE) * 17) % 360;
   return `hsl(${hue} 68% 50%)`;
+}
+
+function midiToFrequency(midi) {
+  return 440 * 2 ** ((midi - 69) / 12);
 }
 
 function midiToVexKey(midi) {
@@ -291,6 +306,7 @@ function App() {
   const [songUrl, setSongUrl] = useState('');
   const [pressed, setPressed] = useState(() => new Map());
   const [hitNotes, setHitNotes] = useState(() => new Set());
+  const [missedNotes, setMissedNotes] = useState(() => new Set());
   const [currentTime, setCurrentTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(0.8);
@@ -305,14 +321,68 @@ function App() {
   const [coachMessage, setCoachMessage] = useState('Load a MIDI file, then play the highlighted keys.');
   const startRef = useRef({ wallTime: 0, songTime: 0 });
   const coachTimerRef = useRef(0);
+  const audioContextRef = useRef(null);
+  const previewNodesRef = useRef([]);
   const fileInputRef = useRef(null);
   const { keys, whiteCount } = useMemo(buildKeyboard, []);
 
   const practiceSteps = useMemo(() => buildPracticeSteps(song?.notes || []), [song]);
   const currentPracticeStep = practiceMode === 'coach' ? practiceSteps[coachStepIndex] : null;
-  const nextPracticeStep = practiceSteps[coachStepIndex + 1] || null;
-  const handParts = currentPracticeStep ? formatHandParts(currentPracticeStep.midis) : { left: '', right: '' };
+  const currentTimedStep = practiceMode === 'timing'
+    ? practiceSteps.find((step) => step.start >= currentTime - TIMING_LATE_SECONDS) || null
+    : null;
+  const sheetPracticeStep = currentPracticeStep || currentTimedStep;
+  const nextPracticeStep = practiceMode === 'coach'
+    ? practiceSteps[coachStepIndex + 1] || null
+    : practiceSteps.find((step) => step.start > (sheetPracticeStep?.start || currentTime) + CHORD_WINDOW_SECONDS) || null;
+  const handParts = sheetPracticeStep ? formatHandParts(sheetPracticeStep.midis) : { left: '', right: '' };
   const handGuide = [handParts.left && `Left hand: ${handParts.left}`, handParts.right && `Right hand: ${handParts.right}`].filter(Boolean).join(' | ');
+
+  const stopPreview = useCallback(() => {
+    previewNodesRef.current.forEach(({ oscillator, gain }) => {
+      try {
+        oscillator.stop();
+      } catch {
+        // The oscillator may already have finished naturally.
+      }
+      gain.disconnect();
+    });
+    previewNodesRef.current = [];
+  }, []);
+
+  const playPreviewNotes = useCallback(async (notesToPlay, originTime) => {
+    if (!notesToPlay.length) return;
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) {
+      setFileError('This browser cannot play the built-in preview synth.');
+      return;
+    }
+
+    if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+    const context = audioContextRef.current;
+    if (context.state === 'suspended') await context.resume();
+    stopPreview();
+
+    const startAt = context.currentTime + 0.05;
+    const origin = originTime ?? notesToPlay[0].start;
+    notesToPlay.slice(0, 180).forEach((note) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const noteStart = startAt + Math.max(0, note.start - origin) / playbackRate;
+      const noteDuration = Math.max(0.08, note.duration / playbackRate);
+      const volume = clamp((note.velocity || 0.6) * 0.08, 0.025, 0.09);
+
+      oscillator.type = 'triangle';
+      oscillator.frequency.setValueAtTime(midiToFrequency(note.midi), noteStart);
+      gain.gain.setValueAtTime(0.0001, noteStart);
+      gain.gain.exponentialRampToValueAtTime(volume, noteStart + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + noteDuration);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(noteStart);
+      oscillator.stop(noteStart + noteDuration + 0.03);
+      previewNodesRef.current.push({ oscillator, gain });
+    });
+  }, [playbackRate, stopPreview]);
 
   const resetToBeginning = useCallback((message = 'Back to the beginning. Try the first target again.') => {
     window.clearTimeout(coachTimerRef.current);
@@ -321,6 +391,7 @@ function App() {
     setCoachStepIndex(0);
     setCoachPlayed(new Set());
     setHitNotes(new Set());
+    setMissedNotes(new Set());
     setStreak(0);
     setMistakeCount((count) => count + 1);
     setCoachMessage(message);
@@ -412,6 +483,7 @@ function App() {
       setSong({ ...parsed, fileName });
       setCurrentTime(0);
       setHitNotes(new Set());
+      setMissedNotes(new Set());
       setCoachStepIndex(0);
       setCoachPlayed(new Set());
       setMistakeCount(0);
@@ -448,7 +520,7 @@ function App() {
     if (!song) return;
     if (practiceMode === 'coach') {
       setPlaying((value) => !value);
-      setCoachMessage(currentPracticeStep ? `Play: ${currentPracticeStep.label}` : 'Ready.');
+      setCoachMessage(sheetPracticeStep ? `Play: ${sheetPracticeStep.label}` : 'Ready.');
       return;
     }
     if (playing) {
@@ -465,6 +537,7 @@ function App() {
     setCoachPlayed(new Set());
     startRef.current = { wallTime: performance.now(), songTime: 0 };
     setHitNotes(new Set());
+    setMissedNotes(new Set());
     setStreak(0);
     setCoachMessage('Rewound. Start from the first target.');
   };
@@ -481,12 +554,26 @@ function App() {
     setCoachMessage(`Target ${nextIndex + 1}: ${step.label}`);
   };
 
+  const playTargetPreview = () => {
+    if (!sheetPracticeStep) return;
+    playPreviewNotes(sheetPracticeStep.notes, sheetPracticeStep.start);
+  };
+
+  const playSectionPreview = () => {
+    if (!song) return;
+    const sectionEnd = currentTime + 8;
+    const sectionNotes = song.notes.filter((note) => note.end >= currentTime && note.start <= sectionEnd);
+    playPreviewNotes(sectionNotes, currentTime);
+  };
+
   const stop = () => {
     setPlaying(false);
+    stopPreview();
     setCurrentTime(0);
     setCoachStepIndex(0);
     setCoachPlayed(new Set());
     setHitNotes(new Set());
+    setMissedNotes(new Set());
     setStreak(0);
     setCoachMessage('Stopped at the beginning.');
   };
@@ -508,11 +595,17 @@ function App() {
   const currentTargets = useMemo(() => {
     if (currentPracticeStep) return new Set(currentPracticeStep.midis);
     const active = new Set();
+    if (practiceMode === 'timing') {
+      visibleNotes.forEach((note) => {
+        if (note.start >= currentTime - TIMING_LATE_SECONDS && note.start <= currentTime + TIMING_EARLY_SECONDS) active.add(note.midi);
+      });
+      return active;
+    }
     visibleNotes.forEach((note) => {
       if (note.start <= currentTime + 0.12 && note.end >= currentTime - 0.05) active.add(note.midi);
     });
     return active;
-  }, [currentPracticeStep, currentTime, visibleNotes]);
+  }, [currentPracticeStep, currentTime, practiceMode, visibleNotes]);
 
   const upcomingTargets = useMemo(() => {
     const upcoming = new Set();
@@ -527,6 +620,32 @@ function App() {
     });
     return upcoming;
   }, [coachStepIndex, currentTime, practiceMode, practiceSteps, visibleNotes]);
+
+  useEffect(() => {
+    if (!song || practiceMode !== 'timing' || !playing) return;
+    const missed = song.notes.find((note) => (
+      note.start < currentTime - TIMING_LATE_SECONDS
+      && !hitNotes.has(note.id)
+      && !missedNotes.has(note.id)
+    ));
+    if (!missed) return;
+
+    if (restartOnMistake) {
+      resetToBeginning(`Missed ${noteName(missed.midi)} at ${missed.start.toFixed(1)}s. Restarting from the beginning.`);
+      return;
+    }
+
+    setMissedNotes((previous) => {
+      const next = new Set(previous);
+      next.add(missed.id);
+      return next;
+    });
+    setMistakeCount((count) => count + 1);
+    setStreak(0);
+    setCoachMessage(`Missed ${noteName(missed.midi)}. Keep going.`);
+  }, [currentTime, hitNotes, missedNotes, playing, practiceMode, resetToBeginning, restartOnMistake, song]);
+
+  useEffect(() => () => stopPreview(), [stopPreview]);
 
   useEffect(() => {
     if (!midiAccess) return undefined;
@@ -544,6 +663,50 @@ function App() {
           next.set(note, velocity);
           return next;
         });
+
+        if (song && practiceMode === 'timing') {
+          if (!playing) {
+            setCoachMessage('Press play in Timing mode, then hit notes as they reach the yellow line.');
+            return;
+          }
+
+          const matchingTargets = song.notes.filter((target) => (
+            target.midi === note
+            && target.start >= currentTime - TIMING_LATE_SECONDS
+            && target.start <= currentTime + TIMING_EARLY_SECONDS
+            && !hitNotes.has(target.id)
+          ));
+
+          if (matchingTargets.length) {
+            const target = matchingTargets.reduce((best, candidate) => (
+              Math.abs(candidate.start - currentTime) < Math.abs(best.start - currentTime) ? candidate : best
+            ));
+            setHitNotes((previous) => {
+              const next = new Set(previous);
+              next.add(target.id);
+              return next;
+            });
+            setStreak((value) => value + 1);
+            setCoachMessage(`On time: ${noteName(note)} (${Math.abs(target.start - currentTime).toFixed(2)}s ${target.start >= currentTime ? 'early' : 'late'}).`);
+            return;
+          }
+
+          const nearestSameNote = song.notes
+            .filter((target) => target.midi === note && !hitNotes.has(target.id))
+            .sort((a, b) => Math.abs(a.start - currentTime) - Math.abs(b.start - currentTime))[0];
+          const timingHint = nearestSameNote
+            ? `${noteName(note)} was ${nearestSameNote.start > currentTime ? 'too early' : 'too late'}.`
+            : `${noteName(note)} is not coming up here.`;
+
+          if (restartOnMistake) {
+            resetToBeginning(`${timingHint} Restarting from the beginning.`);
+          } else {
+            setMistakeCount((count) => count + 1);
+            setStreak(0);
+            setCoachMessage(timingHint);
+          }
+          return;
+        }
 
         if (song && practiceMode === 'coach') {
           const step = currentPracticeStep;
@@ -610,6 +773,7 @@ function App() {
     currentPracticeStep,
     currentTargets,
     currentTime,
+    hitNotes,
     midiAccess,
     playing,
     practiceMode,
@@ -717,6 +881,7 @@ function App() {
             <div className="sectionTitle">Practice</div>
             <div className="segmented">
               <button className={practiceMode === 'coach' ? 'active' : ''} onClick={() => setPracticeMode('coach')}>Coach</button>
+              <button className={practiceMode === 'timing' ? 'active' : ''} onClick={() => setPracticeMode('timing')}>Timing</button>
               <button className={practiceMode === 'follow' ? 'active' : ''} onClick={() => setPracticeMode('follow')}>Follow</button>
             </div>
             <label className="toggleRow">
@@ -766,6 +931,16 @@ function App() {
                 <CircleStop size={18} />
               </button>
             </div>
+            <div className="previewTools">
+              <button onClick={playTargetPreview} disabled={!song || !sheetPracticeStep} title="Hear the current target">
+                <Volume2 size={17} />
+                Target
+              </button>
+              <button onClick={playSectionPreview} disabled={!song} title="Hear the next few seconds">
+                <Volume2 size={17} />
+                Next 8s
+              </button>
+            </div>
             <div className="stepTools">
               <button onClick={() => goToCoachStep(coachStepIndex - 1)} disabled={!song || practiceMode !== 'coach' || coachStepIndex <= 0} title="Previous target">
                 <StepBack size={17} />
@@ -780,7 +955,7 @@ function App() {
         </aside>
 
         <section className="stage">
-          <SheetPreview step={currentPracticeStep} nextStep={nextPracticeStep} played={coachPlayed} />
+          <SheetPreview step={sheetPracticeStep} nextStep={nextPracticeStep} played={coachPlayed} />
 
           <div className="stats">
             <div>
@@ -796,13 +971,13 @@ function App() {
               <strong>{[...pressedSet].map(noteName).join(' ') || 'Silent'}</strong>
             </div>
             <div>
-              <span>{practiceMode === 'coach' ? 'Mistakes' : 'Hits'}</span>
-              <strong>{practiceMode === 'coach' ? mistakeCount : `${accuracy}%`}</strong>
+              <span>{practiceMode === 'follow' ? 'Hits' : 'Mistakes'}</span>
+              <strong>{practiceMode === 'follow' ? `${accuracy}%` : mistakeCount}</strong>
             </div>
           </div>
 
           <div className="roll" style={{ '--white-count': whiteCount }}>
-            {practiceMode === 'coach' && (
+            {practiceMode !== 'follow' && (
               <div className="coachBanner">
                 <strong>{coachMessage}</strong>
                 {handGuide && (
@@ -811,7 +986,9 @@ function App() {
                     {handGuide}
                   </em>
                 )}
-                <span>Streak {streak} · {restartOnMistake ? 'Wrong notes send you back to the beginning' : 'Wrong notes are counted only'}</span>
+                <span>
+                  Streak {streak} · {practiceMode === 'timing' ? `Timing window -${TIMING_LATE_SECONDS.toFixed(2)}s / +${TIMING_EARLY_SECONDS.toFixed(2)}s` : restartOnMistake ? 'Wrong notes send you back to the beginning' : 'Wrong notes are counted only'}
+                </span>
               </div>
             )}
             <div className="playLine" />
