@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "scan:ble-midi": "swift scripts/ble-midi-scan.swift",
+    "generate:stress-relief": "python3 scripts/generate-stress-relief-midi.py",
     "extract:video": "bash scripts/video-sheet-extract.sh"
   },
   "keywords": [],

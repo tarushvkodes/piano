@@ -39,6 +39,8 @@ Coach mode is active learning, not a passive video-style playback:
 - If you play the correct note or complete the chord, it advances to the next step.
 - If **Restart on mistake** is enabled, a wrong note sends you back to the beginning of the song.
 - If **Restart on mistake** is disabled, wrong notes are counted but the song does not reset.
+- Turn off **Auto-advance after correct notes** when you want to drill one target repeatedly, then use **Previous** and **Next** to move through the song by hand.
+- Keep **Show beginner key labels** enabled while you are learning the keyboard geography. The top sheet panel also splits each target into left-hand and right-hand notes.
 
 **Follow** mode keeps the scrolling piano-roll behavior for looser practice.
 
@@ -49,9 +51,15 @@ The Song panel has buttons for:
 - `Mrs Magic` -> `public/midi/mrs-magic-strings-version.mid`
 - `Stress Relief` -> `public/midi/stress-relief-late-night-drive-home.mid`
 
-Put those MIDI files in `public/midi/` and the buttons will load them. If a source blocks browser fetches, download the MIDI and use **Load MIDI**.
+Those files live in `public/midi/` so the buttons load immediately. If a source blocks browser fetches for a different song, download the MIDI and use **Load MIDI**.
 
 If those files are missing or a URL returns HTML instead of MIDI, the app shows a clear missing-file message instead of trying to parse the page as MIDI.
+
+The Stress Relief file is a beginner piano-coach arrangement generated from the song's common guitar chord loop, not a note-perfect official transcription. Regenerate it with:
+
+```bash
+npm run generate:stress-relief
+```
 
 ## FP-10 instrument
 

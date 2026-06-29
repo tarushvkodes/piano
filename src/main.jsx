@@ -7,11 +7,14 @@ import {
   CircleStop,
   ExternalLink,
   FileMusic,
+  Hand,
   KeyboardMusic,
   Pause,
   Play,
   RefreshCw,
   SkipBack,
+  StepBack,
+  StepForward,
   Upload,
 } from 'lucide-react';
 import './styles.css';
@@ -23,7 +26,7 @@ const CHORD_WINDOW_SECONDS = 0.08;
 const MAGIC_STRINGS_LOCAL_PATH = '/midi/mrs-magic-strings-version.mid';
 const STRESS_RELIEF_LOCAL_PATH = '/midi/stress-relief-late-night-drive-home.mid';
 const MAGIC_STRINGS_SOURCE_URL = 'https://www.hamienet.com/midi95020_Mrs-Magic-Strings-Version.html';
-const STRESS_RELIEF_SEARCH_URL = 'https://www.google.com/search?q=Stress+Relief+Late+Night+Drive+Home+MIDI';
+const STRESS_RELIEF_SOURCE_URL = 'https://www.youtube.com/watch?v=mcsndWw-Tzs';
 const SONG_PRESETS = [
   {
     id: 'mrs-magic',
@@ -37,11 +40,13 @@ const SONG_PRESETS = [
     label: 'Stress Relief',
     fileName: 'Stress Relief - Late Night Drive Home.mid',
     localPath: STRESS_RELIEF_LOCAL_PATH,
-    sourceUrl: STRESS_RELIEF_SEARCH_URL,
+    sourceUrl: STRESS_RELIEF_SOURCE_URL,
   },
 ];
 const WHITE_PITCHES = new Set([0, 2, 4, 5, 7, 9, 11]);
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+const VEX_NOTE_NAMES = ['c', 'db', 'd', 'eb', 'e', 'f', 'gb', 'g', 'ab', 'a', 'bb', 'b'];
+const FLAT_PITCHES = new Set([1, 3, 6, 8, 10]);
 
 function noteName(midi) {
   return `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
@@ -57,15 +62,25 @@ function noteColor(midi) {
 }
 
 function midiToVexKey(midi) {
-  const rawName = NOTE_NAMES[midi % 12].toLowerCase();
+  const pitch = midi % 12;
+  const rawName = VEX_NOTE_NAMES[pitch];
   return {
     key: `${rawName}/${Math.floor(midi / 12) - 1}`,
-    accidental: rawName.includes('#') ? '#' : null,
+    accidental: FLAT_PITCHES.has(pitch) ? 'b' : null,
   };
 }
 
 function formatNotes(midis) {
   return [...midis].sort((a, b) => a - b).map(noteName).join(' ');
+}
+
+function formatHandParts(midis) {
+  const left = [...midis].filter((midi) => midi < 60);
+  const right = [...midis].filter((midi) => midi >= 60);
+  return {
+    left: left.length ? formatNotes(left) : '',
+    right: right.length ? formatNotes(right) : '',
+  };
 }
 
 function isMidiBuffer(buffer) {
@@ -222,6 +237,8 @@ function SheetPreview({ step, nextStep, played }) {
   const currentLabel = step?.label || 'Load a MIDI file';
   const playedLabel = played.size ? formatNotes(played) : 'None yet';
   const nextLabel = nextStep?.label || 'End';
+  const handParts = step ? formatHandParts(step.midis) : { left: '', right: '' };
+  const handLabel = [handParts.left && `L ${handParts.left}`, handParts.right && `R ${handParts.right}`].filter(Boolean).join(' | ') || 'Ready';
 
   return (
     <div className="sheetPanel">
@@ -237,6 +254,10 @@ function SheetPreview({ step, nextStep, played }) {
         <div>
           <span>Next</span>
           <strong>{nextLabel}</strong>
+        </div>
+        <div>
+          <span>Hands</span>
+          <strong>{handLabel}</strong>
         </div>
       </div>
       <div className="sheetCanvas" ref={sheetRef} />
@@ -275,6 +296,8 @@ function App() {
   const [playbackRate, setPlaybackRate] = useState(0.8);
   const [practiceMode, setPracticeMode] = useState('coach');
   const [restartOnMistake, setRestartOnMistake] = useState(true);
+  const [autoAdvance, setAutoAdvance] = useState(true);
+  const [showKeyLabels, setShowKeyLabels] = useState(true);
   const [coachStepIndex, setCoachStepIndex] = useState(0);
   const [coachPlayed, setCoachPlayed] = useState(() => new Set());
   const [mistakeCount, setMistakeCount] = useState(0);
@@ -288,6 +311,8 @@ function App() {
   const practiceSteps = useMemo(() => buildPracticeSteps(song?.notes || []), [song]);
   const currentPracticeStep = practiceMode === 'coach' ? practiceSteps[coachStepIndex] : null;
   const nextPracticeStep = practiceSteps[coachStepIndex + 1] || null;
+  const handParts = currentPracticeStep ? formatHandParts(currentPracticeStep.midis) : { left: '', right: '' };
+  const handGuide = [handParts.left && `Left hand: ${handParts.left}`, handParts.right && `Right hand: ${handParts.right}`].filter(Boolean).join(' | ');
 
   const resetToBeginning = useCallback((message = 'Back to the beginning. Try the first target again.') => {
     window.clearTimeout(coachTimerRef.current);
@@ -313,6 +338,11 @@ function App() {
     setCoachPlayed(new Set());
 
     const nextIndex = completedStep.index + 1;
+    if (!autoAdvance) {
+      setCoachMessage(`Correct: ${completedStep.label}. Press next target when you are ready.`);
+      return;
+    }
+
     if (nextIndex >= practiceSteps.length) {
       setPlaying(false);
       setCurrentTime(song?.duration || completedStep.end);
@@ -323,7 +353,7 @@ function App() {
     setCoachStepIndex(nextIndex);
     setCurrentTime(practiceSteps[nextIndex].start);
     setCoachMessage(`Good. Next: ${practiceSteps[nextIndex].label}`);
-  }, [practiceSteps, song]);
+  }, [autoAdvance, practiceSteps, song]);
 
   const refreshInputs = useCallback((access = midiAccess) => {
     if (!access) return;
@@ -437,6 +467,18 @@ function App() {
     setHitNotes(new Set());
     setStreak(0);
     setCoachMessage('Rewound. Start from the first target.');
+  };
+
+  const goToCoachStep = (index) => {
+    if (!practiceSteps.length) return;
+    const nextIndex = clamp(index, 0, practiceSteps.length - 1);
+    const step = practiceSteps[nextIndex];
+    window.clearTimeout(coachTimerRef.current);
+    setPlaying(false);
+    setCurrentTime(step.start);
+    setCoachStepIndex(nextIndex);
+    setCoachPlayed(new Set());
+    setCoachMessage(`Target ${nextIndex + 1}: ${step.label}`);
   };
 
   const stop = () => {
@@ -656,9 +698,9 @@ function App() {
               <ExternalLink size={15} />
               Mrs Magic source
             </a>
-            <a className="sourceLink" href={STRESS_RELIEF_SEARCH_URL} target="_blank" rel="noreferrer">
+            <a className="sourceLink" href={STRESS_RELIEF_SOURCE_URL} target="_blank" rel="noreferrer">
               <ExternalLink size={15} />
-              Stress Relief MIDI search
+              Stress Relief tab video
             </a>
             {fileError && <p className="error">{fileError}</p>}
             {song && (
@@ -685,6 +727,22 @@ function App() {
               />
               <span>Restart on mistake</span>
             </label>
+            <label className="toggleRow">
+              <input
+                type="checkbox"
+                checked={autoAdvance}
+                onChange={(event) => setAutoAdvance(event.target.checked)}
+              />
+              <span>Auto-advance after correct notes</span>
+            </label>
+            <label className="toggleRow">
+              <input
+                type="checkbox"
+                checked={showKeyLabels}
+                onChange={(event) => setShowKeyLabels(event.target.checked)}
+              />
+              <span>Show beginner key labels</span>
+            </label>
             <label>
               Speed
               <input
@@ -706,6 +764,16 @@ function App() {
               </button>
               <button onClick={stop} disabled={!song} title="Stop">
                 <CircleStop size={18} />
+              </button>
+            </div>
+            <div className="stepTools">
+              <button onClick={() => goToCoachStep(coachStepIndex - 1)} disabled={!song || practiceMode !== 'coach' || coachStepIndex <= 0} title="Previous target">
+                <StepBack size={17} />
+                Previous
+              </button>
+              <button onClick={() => goToCoachStep(coachStepIndex + 1)} disabled={!song || practiceMode !== 'coach' || coachStepIndex >= practiceSteps.length - 1} title="Next target">
+                Next
+                <StepForward size={17} />
               </button>
             </div>
           </div>
@@ -737,6 +805,12 @@ function App() {
             {practiceMode === 'coach' && (
               <div className="coachBanner">
                 <strong>{coachMessage}</strong>
+                {handGuide && (
+                  <em>
+                    <Hand size={14} />
+                    {handGuide}
+                  </em>
+                )}
                 <span>Streak {streak} · {restartOnMistake ? 'Wrong notes send you back to the beginning' : 'Wrong notes are counted only'}</span>
               </div>
             )}
@@ -774,13 +848,15 @@ function App() {
                   'key white',
                   pressedSet.has(key.midi) ? 'pressed' : '',
                   currentTargets.has(key.midi) ? 'target' : '',
+                  currentTargets.has(key.midi) && key.midi < 60 ? 'leftHand' : '',
+                  currentTargets.has(key.midi) && key.midi >= 60 ? 'rightHand' : '',
                   coachPlayed.has(key.midi) ? 'partial' : '',
                   upcomingTargets.has(key.midi) ? 'upcoming' : '',
                 ].join(' ')}
                 style={{ '--accent': noteColor(key.midi) }}
                 title={key.name}
               >
-                <span>{key.pitch === 0 ? key.name : ''}</span>
+                <span>{showKeyLabels || currentTargets.has(key.midi) || key.pitch === 0 ? key.name : ''}</span>
               </button>
             ))}
             {keys.filter((key) => !key.isWhite).map((key) => (
@@ -790,6 +866,8 @@ function App() {
                   'key black',
                   pressedSet.has(key.midi) ? 'pressed' : '',
                   currentTargets.has(key.midi) ? 'target' : '',
+                  currentTargets.has(key.midi) && key.midi < 60 ? 'leftHand' : '',
+                  currentTargets.has(key.midi) && key.midi >= 60 ? 'rightHand' : '',
                   coachPlayed.has(key.midi) ? 'partial' : '',
                   upcomingTargets.has(key.midi) ? 'upcoming' : '',
                 ].join(' ')}
@@ -799,7 +877,9 @@ function App() {
                   width: `${(0.58 / whiteCount) * 100}%`,
                 }}
                 title={key.name}
-              />
+              >
+                <span>{showKeyLabels || currentTargets.has(key.midi) ? key.name : ''}</span>
+              </button>
             ))}
           </div>
 

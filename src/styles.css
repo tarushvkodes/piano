@@ -158,7 +158,8 @@ label {
 
 .primary,
 .secondary,
-.transport button {
+.transport button,
+.stepTools button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -175,7 +176,8 @@ label {
 }
 
 .secondary,
-.transport button {
+.transport button,
+.stepTools button {
   color: #173f43;
   background: #e3eee8;
 }
@@ -235,6 +237,12 @@ label {
   gap: 8px;
 }
 
+.stepTools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .hint,
 .error,
 .songMeta {
@@ -277,7 +285,7 @@ label {
 
 .sheetHeader {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1.25fr;
   gap: 1px;
   background: rgba(24, 32, 31, 0.12);
 }
@@ -386,6 +394,16 @@ label {
   text-transform: uppercase;
 }
 
+.coachBanner em {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #f3d66d;
+  font-size: 0.84rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
 .playLine {
   position: absolute;
   right: 0;
@@ -460,6 +478,19 @@ label {
   border-radius: 0 0 4px 4px;
 }
 
+.black span {
+  position: absolute;
+  right: 1px;
+  bottom: 7px;
+  left: 1px;
+  overflow: hidden;
+  color: #f8f4ea;
+  font-size: 0.56rem;
+  font-weight: 900;
+  text-align: center;
+  text-overflow: ellipsis;
+}
+
 .key.upcoming {
   box-shadow: inset 0 -9px 0 var(--accent);
 }
@@ -467,6 +498,14 @@ label {
 .key.target {
   background: var(--accent);
   box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.52);
+}
+
+.key.target.leftHand {
+  box-shadow: inset 0 0 0 3px rgba(114, 194, 255, 0.9), 0 0 18px rgba(114, 194, 255, 0.42);
+}
+
+.key.target.rightHand {
+  box-shadow: inset 0 0 0 3px rgba(247, 207, 92, 0.94), 0 0 18px rgba(247, 207, 92, 0.38);
 }
 
 .key.partial {
